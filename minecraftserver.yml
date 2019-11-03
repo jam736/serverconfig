@@ -1,0 +1,185 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+  become: yes
+
+  vars_prompt :
+    - name: "levelName"
+      prompt: "Enter the level name"
+      private: no
+      default: "world"
+    - name: "difficulty"
+      prompt: "Enter the difficulty: peaceful/easy/normalhard"
+      private: no
+      default: "normal"
+    - name: "gamemode"
+      prompt: "Enter the gameplay mode: survival/creative/adventure/spectator"
+      private: no
+      default: "survival"
+    - name: "levelType"
+      prompt: "Enter the level type: default/flat/largebiomes/amplified"
+      private: no
+      default: "default"
+    - name: "enableRcon"
+      prompt: "Enable RCON? (true/false)"
+      private: no
+      default: "false"
+    - name: "serverIP"
+      prompt: "Enter the server IP address"
+      private: no
+    - name: "serverPort"
+      prompt: "Enter the server port number"
+      private: no
+      default: "25565"
+    - name: "rconPort"
+      prompt: "Enter the RCON port number"
+      private: no
+      default: "25575"
+    - name: "rconPassword"
+      prompt: "Enter the RCON password"
+      private: yes
+      crypt: "sha512_crypt"
+
+
+  tasks:
+  - name: Create minecraft group
+    group:
+      name: minecraft
+      system: yes
+
+  - name: Create minecraft user
+    user:
+      name: minecraft
+      create_home: yes
+      system: yes
+      group: minecraft
+      home: /opt/minecraft
+      shell: /bin/bash
+
+  - name: Make directories
+    become_user: minecraft
+    file:    
+      path: "{{ item.path }}"
+      group: minecraft
+      state: directory
+
+    loop:
+      - { path: ~/backups }
+      - { path: ~/tools }
+      - { path: ~/server }
+
+  - name: Download the minecraft RCON (mcrcon)
+    become_user: minecraft
+    git:
+      dest: ~/tools
+      repo: https://github.com/Tiiffi/mcrcon.git
+
+  - name: Complie the mcrcon utility
+    become_user: minecraft
+    shell: "gcc -std=gnu11 -pedantic -Wall -Wextra -O2 -s -o mcrcon mcrcon.c"
+    args:
+      chdir: ~/tools
+
+  - name: Download minecraft server 1.14.4
+    become_user: minecraft
+    get_url:
+      dest: ~/server/minecraft_server_1.14.4.jar
+      url: https://launcher.mojang.com/v1/objects/3dc3d84a581f14691199cf6831b71ed1296a9fdf/server.jar
+
+  - name: Create minecraft server.properties file
+    become_user: minecraft
+    blockinfile:
+      path: ~/server/server.properties
+      insertbefore: BOF
+      create: yes
+      block: |
+        #Minecraft server properties
+        #Sun Nov 03 16:44:02 UTC 2019
+        broadcast-rcon-to-ops=true
+        view-distance=10
+        max-build-height=256
+        server-ip={{ serverIP }}
+        level-seed=
+        rcon.port={{ rconPort }}
+        gamemode={{ gamemode }}
+        server-port={{ serverPort }}
+        allow-nether=true
+        enable-command-block=false
+        enable-rcon={{ enableRcon }}
+        enable-query=false
+        op-permission-level=4
+        prevent-proxy-connections=false
+        generator-settings=
+        resource-pack=
+        level-name={{ levelName }}
+        rcon.password={{ rconPassword }}
+        player-idle-timeout=0
+        motd=A Minecraft Server
+        query.port={{ serverPort }}
+        force-gamemode=false
+        hardcore=false
+        white-list=false
+        broadcast-console-to-ops=true
+        pvp=true
+        spawn-npcs=true
+        generate-structures=true
+        spawn-animals=true
+        snooper-enabled=true
+        difficulty={{ difficulty }}
+        function-permission-level=2
+        network-compression-threshold=256
+        level-type={{ levelType }}
+        spawn-monsters=true
+        max-tick-time=60000
+        enforce-whitelist=false
+        use-native-transport=true
+        max-players=20
+        resource-pack-sha1=
+        spawn-protection=16
+        online-mode=true
+        allow-flight=false
+        max-world-size=29999984
+
+  - name: Create minecraft eula.txt file
+    become_user: minecraft
+    blockinfile:
+      path: ~/server/eula.txt
+      insertbefore: BOF
+      create: yes
+      block: |
+        #By changing the setting below to TRUE you are indicating your agreement to our EULA (https://account.mojang.com/documents/minecr$
+        #Sun Nov 03 16:41:37 UTC 2019
+        eula=true
+
+  - name: Create minecraft server as a service
+    blockinfile:
+      path: /etc/systemd/system/minecraft.service
+      insertbefore: BOF
+      create: yes
+      block: |
+        [Unit]
+        Description=Minecraft Server
+        After=network.target
+
+        [Service]
+        User=minecraft
+        Nice=1
+        KillMode=none
+        SuccessExitStatus=0 1
+        ProtectHome=true
+        ProtectSystem=full
+        PrivateDevices=true
+        NoNewPrivileges=true
+        WorkingDirectory=/opt/minecraft/server
+        ExecStart=/usr/bin/java -Xmx2048M -Xms1024M -jar minecraft_server_1.14.4.jar nogui
+        ExecStop=/opt/minecraft/tools/mcrcon -H 127.0.0.1 -P {{ rconPort }} -p {{ rconPassword }} stop
+
+        [Install]
+        WantedBy=multi-user.target
+
+  - name: Enable the minecraft service to autostart at boot
+    systemd:
+      daemon_reload: yes
+      name: minecraft.service
+      state: started
+      enabled: yes
