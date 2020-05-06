@@ -1,0 +1,29 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+  become: yes
+
+  tasks:
+  - name: Configure ssh
+    lineinfile:
+      path: /etc/ssh/sshd_config
+      regexp: "PasswordAuthentication"
+      line: "PasswordAuthentication no"
+      state: present
+
+  - lineinfile:
+      path: /etc/ssh/sshd_config
+      regexp: "PubkeyAuthentication"
+      line: "PubkeyAuthentication yes"
+      state: present
+
+  - lineinfile:
+      path: /etc/ssh/sshd_config
+      regexp: "UsePAM"
+      line: "UsePAM no"
+      state: present
+
+  - name: Restart sshd after config changes
+    systemd:
+      name: sshd
+      state: restarted

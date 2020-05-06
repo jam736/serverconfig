@@ -1,0 +1,85 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+  become: yes
+
+  vars_prompt :
+    - name: "ethernet_ip_address"
+      prompt: "Enter the desired ethernet port IP address"
+      private: no
+    - name: "wireless_ip_address"
+      prompt: "Enter the desired wireless IP address"
+      private: no
+    - name: "gateway4_ip_address"
+      prompt: "Enter the gateway (router) IP address"
+      private: no
+    - name: "wifi_ssid"
+      prompt: "Enter the name of the wireless network (SSID)"
+      private: yes
+      crypt: "sha512_crypt"
+    - name: "wifi_password"
+      prompt: "Enter the password for the wireless network"
+      private: yes
+      crypt: "sha512_crypt"
+  tasks:
+#  - name: Install Wireless network driver and WPA support for wireless adapter
+#    apt:
+#      name: "{{ packages }}"
+#      state: present
+#    vars:
+#      packages:
+#      - rtl8812au-dkms
+#      - wpasupplicant
+
+  - name: Get ethernet and wireless card logical name
+    shell: "lshw -C network | grep -o -P '(?<=logical name: ).*' | head -1"
+    register: ethernet_logical_name
+
+  - shell: "lshw -C network | grep -o -P '(?<=logical name: ).*' | tail -1"
+    register: wifi_logical_name
+
+  - debug:
+      var: ethernet_logical_name.stdout
+
+  - debug:
+      var: wifi_logical_name.stdout
+
+  - name: Prepare configuration file for network adapters
+    lineinfile:
+      path: /etc/cloud/cloud.cfg.d/50-curtin-networking.cfg
+      state: absent
+      regexp: "^"
+
+  - name: Add configuration for network adapters
+    blockinfile:
+      path: /etc/cloud/cloud.cfg.d/50-curtin-networking.cfg
+      block: |
+        network:
+          version: 2
+          ethernets:
+            {{ ethernet_logical_name.stdout }}:
+              addresses:
+                - {{ ethernet_ip_address }}/24
+              gateway4: {{ gateway4_ip_address }}
+              nameservers:
+                addresses: [{{ gateway4_ip_address }}]
+              dhcp4: no
+              dhcp6: no
+          wifis:
+            {{ wifi_logical_name.stdout }}:
+              addresses:
+                - {{ wireless_ip_address }}/24
+              gateway4: {{ gateway4_ip_address }}
+              nameservers:
+                addresses: [{{ gateway4_ip_address }}]
+              dhcp4: no
+              dhcp6: no
+              access-points:
+                "{{ wifi_ssid }}":
+                  password: "{{ wifi_password }}"
+                "{{ wifi_ssid }}-5G":
+                  password: "{{ wifi_password }}"
+
+  - shell: "cloud-init clean"
+  - shell: "cloud-init init"
+  - shell: "netplan apply"

@@ -1,0 +1,66 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+  become: yes
+
+  tasks:
+  - name: Install git
+    apt:
+      name: git
+      state: present
+
+  - name: Install java
+    apt:
+      name: openjdk-11-jdk
+      state: present
+
+  - name: Add Docker GPG key
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+
+  - name: Install Docker prerequisites
+    apt:
+      name: ['apt-transport-https','ca-certificates','curl','software-properties-common']
+      update_cache: yes
+      state: present
+
+  - name: Add Docker API repository
+    apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable
+
+  - name: Installer Docker
+    apt:
+      name: docker-ce
+      state: present
+
+  - name: Network package drivers
+    apt:
+      name: ['build-essential', 'dkms']
+      state: present
+
+  - name: Remove floppy drive from configuration
+    modprobe:
+      name: floppy
+      state: absent
+
+  - name: Add floppy to blacklist
+    copy:
+      dest: /etc/modprobe.d/blacklist-floppy.conf
+      content: blacklist floppy
+
+  - shell: "dpkg-reconfigure initramfs-tools"
+
+  - name: Install Samba
+    apt:
+      name: samba
+      state: present
+
+  - name: Configure Samba share directory
+    blockinfile:
+      path: /etc/samba/smb.conf
+      block: |
+        [sambashare]
+          comment = Samba on Ubuntu
+          path = /raidstorage
+          read only = yes
+          browsable = yes
